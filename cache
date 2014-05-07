@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# Copyright (c) 2014 Robert Harris, rharris@adminrobert.com
+
+MyNameIs=${0##*/}
+
+# The following 2 variables are meant to be set in the environment
+# CacheDir is the location on disk to which the cache files are written
+[ -z "${CacheDir}" ]    && CacheDir="${HOME}/.${MyNameIs}/cache"
+# CacheExpire is the default time in which a cache will expire
+# This variable can be in 2 formats, the first the word "time:" followed
+# by a number of seconds. The second is the full path to a file. Cache
+# will check the modification time of the file and expire older caches
+[ -z "${CacheExpire}" ] && CacheExpire="time:86400"
+
+
+Cache () {
+    # Make the directory required for storage
+    mkdir -p "${CacheDir}"
+    # Read in all input if coming from stdin, as long as stdin is not a tty
+    [ -t 0 ] \
+        || local In="$(</dev/stdin)"
+    # The key is used for writing cache to disk uniquely
+    local Key="${1}"
+    # A second argument can be passed instead of setting CacheExpire
+    local Expire="${2:-${CacheExpire}}"
+    # This is a hard limit to the cache, if this is null: ""
+    # expiration will not have a hard limit and only follow Expire
+    local ForceExpire=86400
+
+    # The Key is required
+    [ -z "${Key}" ] && return 5
+
+    # Make the file name unique and filesystem safe
+    local KeyHash="$(md5sum <(echo "${Key}"))"
+    KeyHash="${KeyHash%% *}"
+
+    if [ -n "${In}" ]
+    then
+        # If there is input, write it to the cache and return it
+        echo "${In}" > ${CacheDir}/${KeyHash}
+        echo "${In}"
+    else
+        # If the hash does not exist there is a problem
+        [ ! -f ${CacheDir}/${KeyHash} ] && return 15
+        Now="$(date +%s)"
+        # Figure out how we are doing expiration, supplied seconds or file mod
+        [[ "${Expire}" =~ ^time: ]] \
+            && Expire="${Expire#time:}" \
+            || Expire="$(( ${Now} - $(stat -c %Y ${Expire}) ))"
+        # Find out how old the cache file is
+        local CacheAge="$(stat -c %Y ${CacheDir}/${KeyHash})"
+        CacheAge="$(( ${Now} - ${CacheAge} ))"
+        # Check expiration
+        { [ -n "${ForceExpire}" ] && [ ${CacheAge} -gt ${ForceExpire} ]; } \
+            || [ ${CacheAge} -gt ${Expire} ] \
+            && return 10
+        # The cache is still valid, give it back
+        cat ${CacheDir}/${KeyHash}
+    fi
+    return 0
+}
