@@ -1,6 +1,3 @@
-cache
-=====
-
 ###Simple shell caching
 
 The aim of this function is to make it easy to take a process which takes a long time to process and store it for future use. It is easy to utilize and greatly improves the performance of some applications.
